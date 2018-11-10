@@ -57,23 +57,25 @@ function main($FilterJunkFolders, $path) {
     }
 
 
-    $stream = [System.IO.StreamWriter]::new($path + "data.csv")
+    $stream = [System.IO.StreamWriter]::new($path + "\data.csv")
     $stream.writeline("Subject, Recipient, Sender, Sender IP, Date, URLs")
     
     $metadata| ForEach-Object {
         
         $stream.WriteLine( $_[0]+ $_[1] -join ", ")}
-    "Wrote " + $path + "data.csv"
+    "Wrote " + $path + "\data.csv"
     $stream.Close()
-    
-    $stream = [System.IO.StreamWriter]::new($path + "errors.csv")
-    $stream.writeline("Errors")
-    
-    $errors| ForEach-Object {
+
+    if ($errors.Count -gt 0) {
+        $stream = [System.IO.StreamWriter]::new($path + "\errors.csv")
+        $stream.writeline("Errors")
         
-        $stream.WriteLine( $_)}
-    "Wrote " + $path + "errors.csv"
-    $stream.Close()
+        $errors| ForEach-Object {
+            
+            $stream.WriteLine( $_)}
+        "Wrote " + $path + "\errors.csv"
+        $stream.Close()
+    }
 
     [String]$metadata.Count + " messages parsed successfully."
     [String]$errors.Count + " messages could not be opened."
