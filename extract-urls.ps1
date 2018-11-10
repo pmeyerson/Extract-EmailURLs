@@ -49,20 +49,18 @@ function main($FilterJunkFolders, $path) {
         $completion = [math]::Round($msgfiles.indexOf($file)/$files.Length * 100)
         $str = "Parsing " + [String]$msgfiles.Count +" Message Files"
         Write-Progress -Activity $str -Status "$completion% Complete" -PercentComplete $completion        
+          
+        try {
+            $data = [io.file]::ReadAllText($file.FullName) }
+        catch {
+            $errors.add($file.FullName) > Null
+            continue}
 
-        if ($file.Extension -eq ".msg")  {
-            #Only parse .msg files
-            try {
-                $data = [io.file]::ReadAllText($file.FullName) }
-            catch {
-                $errors.add($file.FullName) > Null
-                continue}
+        if ($data -match $url_pattern) {
 
-            if ($data -match $url_pattern) {
-
-                $metadata.add(@(Get-Metadata($data, $url_pattern))) > $null #append results but suppress output 
-            }
+            $metadata.add(@(Get-Metadata($data, $url_pattern))) > $null #append results but suppress output 
         }
+        
     }
 
 
