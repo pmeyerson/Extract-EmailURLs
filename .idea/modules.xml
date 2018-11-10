@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/extract-urls.iml" filepath="$PROJECT_DIR$/.idea/extract-urls.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../msgraph-investigate/.idea/msgraph-investigate.iml" filepath="$PROJECT_DIR$/../msgraph-investigate/.idea/msgraph-investigate.iml" />
+    </modules>
+  </component>
+</project>

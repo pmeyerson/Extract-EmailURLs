@@ -8,26 +8,27 @@ function main() {
      :param: path     {string}  Directory containing emails or .zips of emails
      :param: unique   {boolean} Only output unique URLs
      #>
-
+    "\n\n\n\n"
     $starttime = get-date
     "Execution begain at: " +$starttime
 
     $FilterJunkFolders = $False
+    $metadata = New-Object System.Collections.ArrayList
     $errors = New-Object System.Collections.ArrayList
-    $path = "c:\out\_run2\"
+    $path = "c:\out\_run3\"
+
     $files = Get-ChildItem -path $path -file -recurse
 
     $zips = @()
     foreach ($file in $files)    {
-        if ($file.Extension -eq ".zip")
-        {
-            $zips += $file
-        }
+        if ($file.Extension -eq ".zip") {
+            $zips += $file }
     }
+
     [String]$zips.Length + " zip files found"
      
     #TODO uncompress zip files
-    $metadata = New-Object System.Collections.ArrayList
+    
     [String]$files.Length + " files found"
 
     foreach ($file in $files) {
@@ -52,9 +53,14 @@ function main() {
         }
     }
 
-    #foreach ($item in $metadata) {
-    #    "Results:" +$item[0] +","+ $item[1] -join ", "
-    #}
+    Measure-Command {
+        $stream = [System.IO.StreamWriter]::new($path + "data1.csv")
+        $stream.writeline("Subject, Recipient, Sender, Sender IP, Date, URLs")
+        $metadata| ForEach-Object {
+            
+            $stream.WriteLine( $_[0]+ $_[1] -join ", ")}
+        $stream.Close()
+    }
 
     [String]$metadata.Count + " messages parsed successfully."
     [String]$errors.Count + " messages could not be opened."
@@ -75,11 +81,12 @@ function main() {
      :return: {array}  array of (metadata, urls)
      #>
 
+    #"\n\n\n\n\n" #make sure output is not obscured by progress bar
      $url_pattern = "\b([a-zA-Z]{3,})://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?"
-     $date_pattern = "\bDate:\s([^+]*)"
-     $sender_pattern = "\bFrom:\s([^>]*)"
+     $date_pattern = "\bDate:\s([^+]*\s)"
+     $sender_pattern = "\bFrom:\s([^>]*>)"
      $sender_ip_pattern = "\bsender\sip\sis\s([^\)]*)"
-     $recipient_pattern = "\bTo:\s([^>]*)"
+     $recipient_pattern = "\bTo:\s([^>]*>)"
 
      $extracted = Select-String -InputObject $data -Pattern $url_pattern -AllMatches
      $message_urls = @()
