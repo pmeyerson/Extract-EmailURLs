@@ -1,3 +1,6 @@
+param(
+    [switch] $FilterJunkFolders,
+    [String] $path)
 function main($FilterJunkFolders, $path) {
     <#
      * walk path and uncompress and .zip files
@@ -17,7 +20,7 @@ function main($FilterJunkFolders, $path) {
     $metadata = New-Object System.Collections.ArrayList
     $errors = New-Object System.Collections.ArrayList
     #$path = "c:\out\_run3\"
-
+    "Scanning " + $path
     $files = Get-ChildItem -path $path -file -recurse
 
     $zips = @()
@@ -123,9 +126,5 @@ function main($FilterJunkFolders, $path) {
      return @($message_metadata, $message_urls)
 
  }
-
- param(
-    [switch] $FilterJunkFolders = $false,
-    [String] $path)
-
-main($FilterJunkFolders, $path)
+"path is set to " + $path
+main -path $path -FilterJunkFolders $FilterJunkFolders

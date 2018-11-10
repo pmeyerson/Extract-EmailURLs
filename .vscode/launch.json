@@ -9,7 +9,7 @@
             "request": "launch",
             "name": "PowerShell Launch Current File",
             "script": "${file}",
-            "args": [],
+            "args": ["-path", "c:\\out\\_run3"],
             "cwd": "${file}"
         },
         {
