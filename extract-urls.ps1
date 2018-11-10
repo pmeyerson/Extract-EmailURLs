@@ -1,4 +1,4 @@
-function main() {
+function main($FilterJunkFolders, $path) {
     <#
      * walk path and uncompress and .zip files
      * open any .msg files, extract URLS and email metadata
@@ -8,14 +8,15 @@ function main() {
      :param: path     {string}  Directory containing emails or .zips of emails
      :param: unique   {boolean} Only output unique URLs
      #>
-    "\n\n\n\n"
+
+    "`n`n`n`n`n" #make sure progress bar doesn't hide text output
     $starttime = get-date
     "Execution begain at: " +$starttime
 
-    $FilterJunkFolders = $False
+    #$FilterJunkFolders = $False
     $metadata = New-Object System.Collections.ArrayList
     $errors = New-Object System.Collections.ArrayList
-    $path = "c:\out\_run3\"
+    #$path = "c:\out\_run3\"
 
     $files = Get-ChildItem -path $path -file -recurse
 
@@ -40,7 +41,6 @@ function main() {
         if ($file.Extension -eq ".msg")  {
             #Only parse .msg files
             try {
-                #$data = get-content -path $file.FullName -ErrorAction SilentlyContinue 
                 $data = [io.file]::ReadAllText($file.FullName) }
             catch {
                 $errors.add($file.FullName) > Null
@@ -53,20 +53,31 @@ function main() {
         }
     }
 
-    Measure-Command {
-        $stream = [System.IO.StreamWriter]::new($path + "data1.csv")
-        $stream.writeline("Subject, Recipient, Sender, Sender IP, Date, URLs")
-        $metadata| ForEach-Object {
-            
-            $stream.WriteLine( $_[0]+ $_[1] -join ", ")}
-        $stream.Close()
-    }
+
+    $stream = [System.IO.StreamWriter]::new($path + "data.csv")
+    $stream.writeline("Subject, Recipient, Sender, Sender IP, Date, URLs")
+    
+    $metadata| ForEach-Object {
+        
+        $stream.WriteLine( $_[0]+ $_[1] -join ", ")}
+    "Wrote " + $path + "data.csv"
+    $stream.Close()
+    
+    $stream = [System.IO.StreamWriter]::new($path + "errors.csv")
+    $stream.writeline("Errors")
+    
+    $errors| ForEach-Object {
+        
+        $stream.WriteLine( $_)}
+    "Wrote " + $path + "errors.csv"
+    $stream.Close()
 
     [String]$metadata.Count + " messages parsed successfully."
     [String]$errors.Count + " messages could not be opened."
     $endtime = get-date
     "Execution ended at: " + $endtime
     "Execution Duration: {0:HH:mm:ss}" -f ([datetime]($endtime - $starttime).Ticks) 
+    
 
  }
 
@@ -81,7 +92,6 @@ function main() {
      :return: {array}  array of (metadata, urls)
      #>
 
-    #"\n\n\n\n\n" #make sure output is not obscured by progress bar
      $url_pattern = "\b([a-zA-Z]{3,})://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?"
      $date_pattern = "\bDate:\s([^+]*\s)"
      $sender_pattern = "\bFrom:\s([^>]*>)"
@@ -114,4 +124,8 @@ function main() {
 
  }
 
-main
+ param(
+    [switch] $FilterJunkFolders = $false,
+    [String] $path)
+
+main($FilterJunkFolders, $path)
