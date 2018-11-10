@@ -13,13 +13,15 @@ function main($FilterJunkFolders, $path) {
      #>
 
     "`n`n`n`n`n" #make sure progress bar doesn't hide text output
+ 
     $starttime = get-date
     "Execution begain at: " +$starttime
 
     #$FilterJunkFolders = $False
     $metadata = New-Object System.Collections.ArrayList
     $errors = New-Object System.Collections.ArrayList
-    #$path = "c:\out\_run3\"
+    $msgFiles = New-Object System.Collections.ArrayList
+
     "Scanning " + $path
     $files = Get-ChildItem -path $path -file -recurse
 
@@ -29,16 +31,23 @@ function main($FilterJunkFolders, $path) {
             $zips += $file }
     }
 
+    foreach ($file in $files) {
+        if ($file.Extension -eq ".msg") {
+            $msgFiles.add($file) > $null
+        }
+    }
+
     [String]$zips.Length + " zip files found"
      
     #TODO uncompress zip files
     
     [String]$files.Length + " files found"
+    [String]$msgFiles.Count + " message files found"
 
-    foreach ($file in $files) {
+    foreach ($file in $msgfiles) {
         
-        $completion = [math]::Round($files.indexOf($file)/$files.Length * 100)
-        $str = "Parsing " + [String]$files.Length +" Message Files"
+        $completion = [math]::Round($msgfiles.indexOf($file)/$files.Length * 100)
+        $str = "Parsing " + [String]$msgfiles.Count +" Message Files"
         Write-Progress -Activity $str -Status "$completion% Complete" -PercentComplete $completion        
 
         if ($file.Extension -eq ".msg")  {
@@ -128,5 +137,5 @@ function main($FilterJunkFolders, $path) {
      return @($message_metadata, $message_urls)
 
  }
-"path is set to " + $path
-main -path $path -FilterJunkFolders $FilterJunkFolders
+#"path is set to " + $path
+main -path $path -FilterJunkFolders $FilterJunkFolders 
