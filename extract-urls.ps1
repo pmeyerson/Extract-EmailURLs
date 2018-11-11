@@ -1,7 +1,7 @@
 param(
     [switch] $FilterJunkFolders,
     [String] $path,
-    [string] $URLFilterList)
+    [string] $URLFilterList ="urlfilters.conf")
 function main($FilterJunkFolders, $path, $urlfilters) {
     <#
      * walk path and uncompress and .zip files
@@ -71,22 +71,22 @@ function main($FilterJunkFolders, $path, $urlfilters) {
         $stream = [System.IO.StreamWriter]::new($path + "\unique.csv")
         $stream.writeline("URL, Domain, Subject, Recipient, Sender, Sender IP, Date, additional recipients")
         
-        foreach ($i in $uniqueURLs) {
+        foreach ($i in $uniqueURLs | Sort-Object) {
             $len = $i[1][1].Count -1
             $meta = $i[1][1][0..$len] -join ";"
-            $str = $i[1][0], $i[0] -join ", "
+            $str = $i[1][0], $i[0] -join " , "
             $str = $str, $meta, $i[1][2] -join ";"
 
             $stream.WriteLine($str)
         }
-        "Wrote " + $path + "\unique.csv"
+        "Wrote " + $path + "\unique.csv with " + $uniqueURLs.Count + " unique URLs"
         $stream.Close()
     }
 
     $stream = [System.IO.StreamWriter]::new($path + "\data.csv")
     $stream.writeline("Subject, Recipient, Sender, Sender IP, Date, URLs")
     
-    $metadata| ForEach-Object {
+    $metadata| Sort-Object |ForEach-Object {
         
         $stream.WriteLine( $_[0]+ $_[1] -join ", ")}
     "Wrote " + $path + "\data.csv"
@@ -96,7 +96,7 @@ function main($FilterJunkFolders, $path, $urlfilters) {
         $stream = [System.IO.StreamWriter]::new($path + "\errors.csv")
         $stream.writeline("Errors")
         
-        $errors| ForEach-Object {
+        $errors| Sort-Object |ForEach-Object {
             
             $stream.WriteLine( $_)}
         "Wrote " + $path + "\errors.csv"
@@ -104,6 +104,7 @@ function main($FilterJunkFolders, $path, $urlfilters) {
     }
 
     [String]$metadata.Count + " messages parsed successfully."
+    [String]($msgFiles.Count - $metadata.Count) + " messages had no URL"
     [String]$errors.Count + " messages could not be opened."
     $endtime = get-date
     "Execution ended at: " + $endtime
@@ -130,10 +131,14 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
             $u = [system.uri]$url
             $url_host = $u.Host
 
-            if ($u.Query) { $query_only = $u.AbsoluteUri.Replace($u.Query, "") 
-            } else {        $query_only = $u.AbsoluteUri
-            }
+            #if ($u.Query) { $query_only = $u.AbsoluteUri.Replace($u.Query, "") 
+            #} else {        $query_only = $u.AbsoluteUri
+            #}
+            $query_only = $u.AbsoluteUri
+            #Strip trailing "/" if present
+            if ($query_only[-1] -eq "/") { $query_only = $query_only -replace ".$"}
 
+            #make array of all url hosts (all $i[0]s)
             $url_hosts_present = foreach($i in $uniqueURLs) {$i[0]}
 
             if (-not $url_hosts_present) {
@@ -164,6 +169,12 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
 }
 
 
+function Get-HTMLContent($data) {
+    #return all characters between <body and </body tags as single string.
+
+    return $data[$data.indexof("<body")..$data.indexof("</body")] -join ""
+ }
+
  function Get-Metadata($data, $url_pattern, $urlfilters) {
     <#
      * walk path and uncompress and .zip files
@@ -176,16 +187,20 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
      #>
 
      $url_pattern = "\b([a-zA-Z]{3,})://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?"
-     $date_pattern = "\bDate:\s([^+]*\s)"
-     $sender_pattern = "\bFrom:\s([^>]*>)"
+     $date_pattern = "\bDate:\s(?<date>[\w,: ]*)"
+     $sender_pattern = "\bFrom:\s(?<sender>[\w @<>\.\]\[]*)"
      $sender_ip_pattern = "\bsender\sip\sis\s([^\)]*)"
-     $recipient_pattern = "\bTo:\s([^>]*>)"
+     $recipient_pattern = "\bTo:\s(?<recipient>[\w @<>\.\[\]]*)"
 
-     $extracted = Select-String -InputObject $data -Pattern $url_pattern -AllMatches
+     
      $message_urls = @()
      $message_metadata =@()
+     #TODO urlpattern regex needs fixing...multiple matches and doesnt get the href text.
 
-     foreach ($i  in $extracted.Matches) { 
+     $html_data = Get-HTMLContent -data $data
+     $extracted_urls = Select-String -InputObject $html_data -Pattern $url_pattern -AllMatches
+
+     foreach ($i  in $extracted_urls.Matches) { 
          if ((-not $message_urls.Contains($i.Value) -and (-not $urlfilters.contains($i.Value)))) {
             $message_urls += $i.Value }}
 
@@ -197,10 +212,14 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
 
      #$temp = @()
 
-     if (-not $extracted_recipient) {  $extracted_recipient = "Null"} else {$extracted_recipient = $extracted_recipient.Matches[-1].Value}
-     if (-not $extracted_sender) { $extracted_sender = "Null"} else { $extracted_sender = $extracted_sender.Matches[-1].Value}
-     if (-not $extracted_sender_ip) { $extracted_sender_ip = "Null"} else { $extracted_sender_ip = $extracted_sender_ip.Matches[-1].Value}
-     if (-not $extracted_date) { $extracted_date = "Null"} else { $extracted_date = $extracted_date.Matches[-1].Value}
+     if (-not $extracted_recipient) {  $extracted_recipient = "Null"} else {$extracted_recipient = $extracted_recipient.Matches.groups[-1].Value}
+     if (-not $extracted_sender) { $extracted_sender = "Null"} else { $extracted_sender = $extracted_sender.Matches.groups[-1].Value}
+     if (-not $extracted_sender_ip) { $extracted_sender_ip = "Null"} else { $extracted_sender_ip = $extracted_sender_ip.Matches.groups[1].Value}
+     if (-not $extracted_date) { $extracted_date = "Null"} else { $extracted_date = $extracted_date.matches.groups[-1].value}
+    
+     if ($extracted_date.Length -ge 100 -or $extracted_recipient.Length -ge 100 -or $extracted_sender.length -ge 110 -or $extracted_sender_ip.length -ge 100) {
+         "regex failed"
+     }
 
      $message_metadata = $extracted_subject, $extracted_recipient, $extracted_sender, $extracted_sender_ip, $extracted_date
      #$temp = @($message_metadata, $message_urls)
