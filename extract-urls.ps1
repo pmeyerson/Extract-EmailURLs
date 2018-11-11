@@ -1,7 +1,8 @@
 param(
     [switch] $FilterJunkFolders,
-    [String] $path)
-function main($FilterJunkFolders, $path) {
+    [String] $path,
+    [string] $URLFilterList)
+function main($FilterJunkFolders, $path, $urlfilters) {
     <#
      * walk path and uncompress and .zip files
      * open any .msg files, extract URLS and email metadata
@@ -21,6 +22,7 @@ function main($FilterJunkFolders, $path) {
     $metadata = New-Object System.Collections.ArrayList
     $errors = New-Object System.Collections.ArrayList
     $msgFiles = New-Object System.Collections.ArrayList
+    $uniqueURLs = New-Object System.Collections.ArrayList
 
     "Scanning " + $path
     $files = Get-ChildItem -path $path -file -recurse
@@ -58,11 +60,28 @@ function main($FilterJunkFolders, $path) {
 
         if ($data -match $url_pattern) {
 
-            $metadata.add(@(Get-Metadata($data, $url_pattern))) > $null #append results but suppress output 
+            $metadata.add(@(Get-Metadata -data $data -url_pattern $url_pattern -urlfilters $urlfilters)) > $null #append results but suppress output 
         }
         
     }
 
+    if ($metadata.Count -gt 0) {
+        Format-UniqueMetadata -metadata $metadata -uniqueURLs $uniqueURLs  
+        
+        $stream = [System.IO.StreamWriter]::new($path + "\unique.csv")
+        $stream.writeline("URL, Domain, Subject, Recipient, Sender, Sender IP, Date, additional recipients")
+        
+        foreach ($i in $uniqueURLs) {
+            $len = $i[1][1].Count -1
+            $meta = $i[1][1][0..$len] -join ";"
+            $str = $i[1][0], $i[0] -join ", "
+            $str = $str, $meta, $i[1][2] -join ";"
+
+            $stream.WriteLine($str)
+        }
+        "Wrote " + $path + "\unique.csv"
+        $stream.Close()
+    }
 
     $stream = [System.IO.StreamWriter]::new($path + "\data.csv")
     $stream.writeline("Subject, Recipient, Sender, Sender IP, Date, URLs")
@@ -93,7 +112,59 @@ function main($FilterJunkFolders, $path) {
 
  }
 
- function Get-Metadata($data, $url_pattern) {
+function Format-UniqueMetadata($metadata, $uniqueURLs) {
+    <#
+    * reformat $metadata into list of unique urls instead of one result per message
+
+    :param: $metadta
+    :param: $uniqueURLs
+
+    #>
+
+    foreach ($i  in $metadata) {
+
+        $message_metadata = $i[0]
+        $message_urls = $i[1]
+
+        foreach ($url in $message_urls) {
+            $u = [system.uri]$url
+            $url_host = $u.Host
+
+            if ($u.Query) { $query_only = $u.AbsoluteUri.Replace($u.Query, "") 
+            } else {        $query_only = $u.AbsoluteUri
+            }
+
+            $url_hosts_present = foreach($i in $uniqueURLs) {$i[0]}
+
+            if (-not $url_hosts_present) {
+                
+                $uniqueURLs.add(@($url_host, @($query_only, $message_metadata, 1))) > $null
+
+            } elseif ($url_hosts_present.contains($url_host)) {
+
+                #see if we already have listed the full URL
+                $urls_present = foreach($i in $uniqueURLs[$uniqueURLs.IndexOf($url_host)]) {$i[0]}
+
+                if (-not $urls_present.contains($query_only)) {
+                    #if the url_host is found but not this specific url, add
+                    $uniqueURLs[$uniqueURLs.indexOf($url_host)] += (@($query_only, $message_metadata, 1)) > $null
+                
+                } else {
+                    # increment count of messages with URL found
+                    $uniqueURLs[$uniqueURLs.IndexOf($url_host)][1][2] += 1
+                }
+
+            } else {
+
+                $uniqueURLs.add(@($url_host, @($query_only, $message_metadata, 1))) > $null
+
+            }
+        }
+    }
+}
+
+
+ function Get-Metadata($data, $url_pattern, $urlfilters) {
     <#
      * walk path and uncompress and .zip files
      * open any .msg files, extract URLS and email metadata
@@ -115,7 +186,8 @@ function main($FilterJunkFolders, $path) {
      $message_metadata =@()
 
      foreach ($i  in $extracted.Matches) { 
-         $message_urls += $i.Value }
+         if ((-not $message_urls.Contains($i.Value) -and (-not $urlfilters.contains($i.Value)))) {
+            $message_urls += $i.Value }}
 
      $extracted_date = Select-String -InputObject $data -Pattern $date_pattern -AllMatches
      $extracted_sender = Select-String -InputObject $data -Pattern $sender_pattern -AllMatches
@@ -135,5 +207,9 @@ function main($FilterJunkFolders, $path) {
      return @($message_metadata, $message_urls)
 
  }
-#"path is set to " + $path
-main -path $path -FilterJunkFolders $FilterJunkFolders 
+
+if ($URLFilterList) {
+    $URLFilters = get-content -Path $URLFilterList
+}
+
+main -path $path -FilterJunkFolders $FilterJunkFolders -urlfilters $URLFilters
