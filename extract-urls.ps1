@@ -69,13 +69,13 @@ function main($FilterJunkFolders, $path, $urlfilters) {
         Format-UniqueMetadata -metadata $metadata -uniqueURLs $uniqueURLs  
         
         $stream = [System.IO.StreamWriter]::new($path + "\unique.csv")
-        $stream.writeline("URL, Domain, Subject, Recipient, Sender, Sender IP, Date, additional recipients")
+        $stream.writeline("URL, Text, Domain, Subject, Recipient, Sender, Sender_IP, Date, Messages_Received")
         
         foreach ($i in $uniqueURLs | Sort-Object) {
-            $len = $i[1][1].Count -1
-            $meta = $i[1][1][0..$len] -join ";"
-            $str = $i[1][0], $i[0] -join " , "
-            $str = $str, $meta, $i[1][2] -join ";"
+            $len = $i[1][2].Count -1 #length of metadata ie $i[1]
+            $meta = $i[1][2][0..$len] -join ";"
+            $str = $i[1][0], $i[1][1], $i[0] -join " , "
+            $str = $str, $meta, $i[1][3] -join ";"
 
             $stream.WriteLine($str)
         }
@@ -84,7 +84,7 @@ function main($FilterJunkFolders, $path, $urlfilters) {
     }
 
     $stream = [System.IO.StreamWriter]::new($path + "\data.csv")
-    $stream.writeline("Subject, Recipient, Sender, Sender IP, Date, URLs")
+    $stream.writeline("Subject, Recipient, Sender, Sender_IP, Date, URLs")
     
     $metadata| Sort-Object |ForEach-Object {
         
@@ -128,7 +128,8 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
         $message_urls = $i[1]
 
         foreach ($url in $message_urls) {
-            $u = [system.uri]$url
+            # $url[0] is the URL, $url[1] is the text description
+            $u = [system.uri]$url[0]
             $url_host = $u.Host
 
             #if ($u.Query) { $query_only = $u.AbsoluteUri.Replace($u.Query, "") 
@@ -143,7 +144,7 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
 
             if (-not $url_hosts_present) {
                 
-                $uniqueURLs.add(@($url_host, @($query_only, $message_metadata, 1))) > $null
+                $uniqueURLs.add(@($url_host, @($query_only, $url[1], $message_metadata, 1))) > $null
 
             } elseif ($url_hosts_present.contains($url_host)) {
 
@@ -152,16 +153,16 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
 
                 if (-not $urls_present.contains($query_only)) {
                     #if the url_host is found but not this specific url, add
-                    $uniqueURLs[$uniqueURLs.indexOf($url_host)] += (@($query_only, $message_metadata, 1)) > $null
+                    $uniqueURLs[$uniqueURLs.indexOf($url_host)] += (@($query_only, $url[1], $message_metadata, 1)) > $null
                 
                 } else {
                     # increment count of messages with URL found
-                    $uniqueURLs[$uniqueURLs.IndexOf($url_host)][1][2] += 1
+                    $uniqueURLs[$uniqueURLs.IndexOf($url_host)][1][3] += 1
                 }
 
             } else {
 
-                $uniqueURLs.add(@($url_host, @($query_only, $message_metadata, 1))) > $null
+                $uniqueURLs.add(@($url_host, @($query_only, $url[1], $message_metadata, 1))) > $null
 
             }
         }
@@ -187,6 +188,9 @@ function Get-HTMLContent($data) {
      #>
 
      $url_pattern = "\b([a-zA-Z]{3,})://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?"
+     $url_pattern2 = @'
+href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
+'@
      $date_pattern = "\bDate:\s(?<date>[\w,: ]*)"
      $sender_pattern = "\bFrom:\s(?<sender>[\w @<>\.\]\[]*)"
      $sender_ip_pattern = "\bsender\sip\sis\s([^\)]*)"
@@ -198,11 +202,14 @@ function Get-HTMLContent($data) {
      #TODO urlpattern regex needs fixing...multiple matches and doesnt get the href text.
 
      $html_data = Get-HTMLContent -data $data
-     $extracted_urls = Select-String -InputObject $html_data -Pattern $url_pattern -AllMatches
+     $extracted_urls = Select-String -InputObject $html_data -Pattern $url_pattern2 -AllMatches
+    #TODO now extracted_url will be @(url, text) not just url
+
 
      foreach ($i  in $extracted_urls.Matches) { 
-         if ((-not $message_urls.Contains($i.Value) -and (-not $urlfilters.contains($i.Value)))) {
-            $message_urls += $i.Value }}
+
+         if ((-not $message_urls.Contains($i.groups[1].value) -and (-not $urlfilters.contains($i.groups[1].value)))) {
+            $message_urls += ,@($i.groups[1..2].value) }}
 
      $extracted_date = Select-String -InputObject $data -Pattern $date_pattern -AllMatches
      $extracted_sender = Select-String -InputObject $data -Pattern $sender_pattern -AllMatches
