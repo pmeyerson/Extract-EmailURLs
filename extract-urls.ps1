@@ -53,7 +53,8 @@ function main($FilterJunkFolders, $path, $urlfilters) {
         Write-Progress -Activity $str -Status "$completion% Complete" -PercentComplete $completion        
           
         try {
-            $data = [io.file]::ReadAllText($file.FullName) }
+            $data = [io.file]::ReadAllText($file.FullName)
+            $data = $data -replace '\x00+' }
         catch {
             $errors.add($file.FullName) > Null
             continue}
@@ -112,6 +113,15 @@ function main($FilterJunkFolders, $path, $urlfilters) {
     
 
  }
+
+function Format-DateTime($string) {
+    try {
+        $a = ([DateTime]$string).tostring("u") }
+    catch 
+    {"format-datetime failed for: " + $string}
+    return $a
+}
+
 
 function Format-UniqueMetadata($metadata, $uniqueURLs) {
     <#
@@ -224,9 +234,17 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
      if (-not $extracted_sender_ip) { $extracted_sender_ip = "Null"} else { $extracted_sender_ip = $extracted_sender_ip.Matches.groups[1].Value}
      if (-not $extracted_date) { $extracted_date = "Null"} else { $extracted_date = $extracted_date.matches.groups[-1].value}
     
+
      if ($extracted_date.Length -ge 100 -or $extracted_recipient.Length -ge 100 -or $extracted_sender.length -ge 110 -or $extracted_sender_ip.length -ge 100) {
          "regex failed"
      }
+
+     if ($extracted_date -and $extracted_date -ne "Null") {
+        $extracted_date = Format-DateTime -string $extracted_date } 
+
+    else {
+        "date regex failed"
+    }
 
      $message_metadata = $extracted_subject, $extracted_recipient, $extracted_sender, $extracted_sender_ip, $extracted_date
      #$temp = @($message_metadata, $message_urls)
