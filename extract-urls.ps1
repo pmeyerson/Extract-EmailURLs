@@ -24,7 +24,7 @@ function main($FilterJunkFolders, $path, $urlfilters) {
     $msgFiles = New-Object System.Collections.ArrayList
     $uniqueURLs = New-Object System.Collections.ArrayList
 
-    "Scanning " + $path
+    #"Scanning " + $path
     $files = Get-ChildItem -path $path -file -recurse
 
     $zips = @()
@@ -39,17 +39,13 @@ function main($FilterJunkFolders, $path, $urlfilters) {
         }
     }
 
-    [String]$zips.Length + " zip files found"
      
     #TODO uncompress zip files
-    
-    [String]$files.Length + " files found"
-    [String]$msgFiles.Count + " message files found"
 
     foreach ($file in $msgfiles) {
         
         $completion = [math]::Round($msgfiles.indexOf($file)/$files.Length * 100)
-        $str = "Parsing " + [String]$msgfiles.Count +" Message Files"
+        $str = "Parsing " + [String]$msgfiles.Count +" Message Files in " + $path
         Write-Progress -Activity $str -Status "$completion% Complete" -PercentComplete $completion        
           
         try {
@@ -104,14 +100,15 @@ function main($FilterJunkFolders, $path, $urlfilters) {
         $stream.Close()
     }
 
+    [String]$zips.Length + " zip files found"   
+    [String]$files.Length + " files found"
+    [String]$msgFiles.Count + " message files found"
     [String]$metadata.Count + " messages parsed successfully."
     [String]($msgFiles.Count - $metadata.Count) + " messages had no URL"
     [String]$errors.Count + " messages could not be opened."
     $endtime = get-date
     "Execution ended at: " + $endtime
     "Execution Duration: {0:HH:mm:ss}" -f ([datetime]($endtime - $starttime).Ticks) 
-    
-
  }
 
 function Format-DateTime($string) {
@@ -139,8 +136,18 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
 
         foreach ($url in $message_urls) {
             # $url[0] is the URL, $url[1] is the text description
-            $u = [system.uri]$url[0]
-            $url_host = $u.Host
+            try{
+                if ($url.Count -eq 2) {
+                    $u = [system.uri]$url[0]  #got some error messages here, guess url didnt always parse right
+                    $url_host = $u.Host } 
+                else {
+                    $u = [system.uri]$url
+                    $url_host = $u.Host
+                }
+            }
+            catch {
+                "Error casting url to system.uri: " + [string]$url
+            }
 
             #if ($u.Query) { $query_only = $u.AbsoluteUri.Replace($u.Query, "") 
             #} else {        $query_only = $u.AbsoluteUri
@@ -197,14 +204,14 @@ function Get-HTMLContent($data) {
      :return: {array}  array of (metadata, urls)
      #>
 
-     $url_pattern = "\b([a-zA-Z]{3,})://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?"
+     #$url_pattern = "\b([a-zA-Z]{3,})://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?"
      $url_pattern2 = @'
 href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
 '@
      $date_pattern = "\bDate:\s(?<date>[\w,: ]*)"
-     $sender_pattern = "\bFrom:\s(?<sender>[\w @<>\.\]\[]*)"
+     $sender_pattern = "\bFrom:\s(?<sender>[,\`"\w @<>\.\]\[]*)"
      $sender_ip_pattern = "\bsender\sip\sis\s([^\)]*)"
-     $recipient_pattern = "\bTo:\s(?<recipient>[\w @<>\.\[\]]*)"
+     $recipient_pattern = "\bTo:\s(?<recipient>[,\`"\w @<>\.\[\]]*)"
 
      
      $message_urls = @()
@@ -213,13 +220,19 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
 
      $html_data = Get-HTMLContent -data $data
      $extracted_urls = Select-String -InputObject $html_data -Pattern $url_pattern2 -AllMatches
-    #TODO now extracted_url will be @(url, text) not just url
+    
 
 
-     foreach ($i  in $extracted_urls.Matches) { 
+     :outer foreach ($i  in $extracted_urls.Matches) { 
 
-         if ((-not $message_urls.Contains($i.groups[1].value) -and (-not $urlfilters.contains($i.groups[1].value)))) {
-            $message_urls += ,@($i.groups[1..2].value) }}
+         if ((-not $message_urls.Contains($i.captures[0].groups.value[1]))) { 
+            foreach ($j in $urlfilters) {if ($i.captures.groups.value[1].contains($j)) 
+                {break :outer}
+           
+            $message_urls += ,@($i.groups[1..2].value) }} }
+
+    remove-variable $i 
+    
 
      $extracted_date = Select-String -InputObject $data -Pattern $date_pattern -AllMatches
      $extracted_sender = Select-String -InputObject $data -Pattern $sender_pattern -AllMatches
