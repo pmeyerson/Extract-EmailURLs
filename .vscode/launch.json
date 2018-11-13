@@ -29,7 +29,8 @@
             "args": [
                 "${command:SpecifyScriptArgs}"
             ],
-            "cwd": "${file}"
+            "cwd": "${file}",
+            "createTemporaryIntegratedConsole": true
         },
         {
             "type": "PowerShell",

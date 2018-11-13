@@ -24,6 +24,10 @@ function main($FilterJunkFolders, $path, $urlfilters) {
     $msgFiles = New-Object System.Collections.ArrayList
     $uniqueURLs = New-Object System.Collections.ArrayList
 
+    $url_pattern = @'
+href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
+'@
+
     #"Scanning " + $path
     $files = Get-ChildItem -path $path -file -recurse
 
@@ -50,14 +54,17 @@ function main($FilterJunkFolders, $path, $urlfilters) {
           
         try {
             $data = [io.file]::ReadAllText($file.FullName)
-            $data = $data -replace '\x00+' }
+            $data = $data -replace '\x00+' 
+        }
         catch {
             $errors.add($file.FullName) > Null
-            continue}
+            continue
+        }
 
         if ($data -match $url_pattern) {
-
-            $metadata.add(@(Get-Metadata -data $data -url_pattern $url_pattern -urlfilters $urlfilters)) > $null #append results but suppress output 
+            #$metadata.add(@(Get-Metadata -data $data -url_pattern $url_pattern -urlfilters $urlfilters)) > $null #append results but suppress output 
+            $temp2 = @(Get-Metadata -data $data -url_pattern $url_pattern -urlfilters $urlfilters)
+            $metadata.add($temp2) > $null #append results but suppress output 
         }
         
     }
@@ -65,9 +72,10 @@ function main($FilterJunkFolders, $path, $urlfilters) {
     if ($metadata.Count -gt 0) {
         Format-UniqueMetadata -metadata $metadata -uniqueURLs $uniqueURLs  
         
-        $stream = [System.IO.StreamWriter]::new($path + "\unique.csv")
-        $stream.writeline("URL, Text, Domain, Subject, Recipient, Sender, Sender_IP, Date, Messages_Received")
+        #$stream = [System.IO.StreamWriter]::new($path + "\unique.csv")
+        #$stream.writeline("URL, Text, Domain, Subject, Recipient, Sender, Sender_IP, Date, Messages_Received")
         
+        <#
         foreach ($i in $uniqueURLs | Sort-Object) {
             $len = $i[1][2].Count -1 #length of metadata ie $i[1]
             $meta = $i[1][2][0..$len] -join ";"
@@ -76,24 +84,49 @@ function main($FilterJunkFolders, $path, $urlfilters) {
 
             $stream.WriteLine($str)
         }
+        #>
+        $csv = foreach ($i in $uniqueURLs | sort-object) {
+            ConvertTo-Csv -InputObject $i -Delimiter ';'
+        }
+        $json = foreach ($i in $uniqueURLs | Sort-Object) {
+            ConvertTo-Json -InputObject $i -Depth 5
+        }
+        
+        $str = $path + '\' + "unique.csv"
+        Export-Csv -InputObject $uniqueURLs -NoTypeInformation -Path $str -Force
+
+        $str = $path + '\' + "unique.json"
+        Set-Content -Path $str -Value $json 
         "Wrote " + $path + "\unique.csv with " + $uniqueURLs.Count + " unique URLs"
-        $stream.Close()
+        "Wrote " + $path +"\unique.json with " + $uniqueURLs.Count + " unique URLs"
+        #$stream.Close()
     }
 
-    $stream = [System.IO.StreamWriter]::new($path + "\data.csv")
-    $stream.writeline("Subject, Recipient, Sender, Sender_IP, Date, URLs")
-    
-    #$metadata| Sort-Object |ForEach-Object {
-    #    
-    #    $stream.WriteLine( $_[0]+ $_[1] -join ", ")}
-    # "Wrote " + $path + "\data.csv"
-    # $stream.Close()
+
+    # write all output as csv
+
+    $csv  = foreach($i in $metadata | sort-object) {
+        ConvertTo-Csv -InputObject $i[-1] -Delimiter ';'
+    }
+    $json = foreach($i in $metadata | Sort-Object) {
+        ConvertTo-Json -InputObject $i[-1] -Depth 5
+    }
+    $str = $path + '\' + "data.csv"   
+    $header = "Subject, Recipient, Sender, Sender_IP, Date, URLs"
+    set-content -path $str -Value $header
+    add-content -path $str -Value $csv
+    "Wrote $str"
+    $str = $path + '\' + "data.json"
+    Set-Content -Path $str -value $json
+    "Wrote $str "
+
     
     $json = foreach ($i in $metadata) {ConvertTo-Json -InputObject $i -depth 5}
 
-    $str = $path + "\output.json"
+    $str = $path + '\' +  "output.json"
     Set-Content -Path $str -Value $json
     
+
     if ($errors.Count -gt 0) {
         $stream = [System.IO.StreamWriter]::new($path + "\errors.csv")
         $stream.writeline("Errors")
@@ -212,9 +245,9 @@ function Get-HTMLContent($data) {
      #>
 
      #$url_pattern = "\b([a-zA-Z]{3,})://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?"
-     $url_pattern2 = @'
-href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
-'@
+     #$url_pattern2 = @'
+#href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
+#'@
      $date_pattern = "\bDate:\s(?<date>[\w,: ]*)"
      $sender_pattern = "\bFrom:\s(?<sender>[,\`"\w @<>\.\]\[]*)"
      $sender_ip_pattern = "\bsender\sip\sis\s([^\)]*)"
@@ -226,7 +259,7 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
      #TODO urlpattern regex needs fixing...multiple matches and doesnt get the href text.
 
      $html_data = Get-HTMLContent -data $data
-     $extracted_urls = Select-String -InputObject $html_data -Pattern $url_pattern2 -AllMatches
+     $extracted_urls = Select-String -InputObject $html_data -Pattern $url_pattern -AllMatches 
 
      :outer foreach ($i  in $extracted_urls.Matches) { 
 
@@ -243,27 +276,32 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
             }
         }
             #$message_urls += ,@($i.groups[1..2].value) }} }
-         $message_urls += ,@{url = $i.groups['url'].value; text = $i.groups['text'].value }               
+         $message_urls += ,@{url = $i.groups['url'].value; text = $i.groups['text'].value }                
     }
 
-     $extracted_date = Select-String -InputObject $data -Pattern $date_pattern -AllMatches
-     $extracted_sender = Select-String -InputObject $data -Pattern $sender_pattern -AllMatches
-     $extracted_sender_ip = Select-String -InputObject $data -Pattern $sender_ip_pattern -AllMatches
-     $extracted_recipient = Select-String -InputObject $data -Pattern $recipient_pattern -AllMatches
-     $extracted_subject = $file.Name -replace ".{4}$" # Default filename is subject + extension of .msg
+    $data.replace("\u003e", ">") |out-null #required otherwise function return will have this as well
+    $data.replace("\u003c", "<")|out-null  # see https://stackoverflow.com/questions/8671602/problems-returning-hashtable
 
-     if (-not $extracted_recipient) {  $extracted_recipient = "Null"} else {$extracted_recipient = $extracted_recipient.Matches.groups[-1].Value}
-     if (-not $extracted_sender) { $extracted_sender = "Null"} else { $extracted_sender = $extracted_sender.Matches.groups[-1].Value}
-     if (-not $extracted_sender_ip) { $extracted_sender_ip = "Null"} else { $extracted_sender_ip = $extracted_sender_ip.Matches.groups[1].Value}
-     if (-not $extracted_date) { $extracted_date = "Null"} else { $extracted_date = $extracted_date.matches.groups[-1].value}
+
+    $extracted_date = Select-String -InputObject $data -Pattern $date_pattern -AllMatches
+    $extracted_sender = Select-String -InputObject $data -Pattern $sender_pattern -AllMatches
+    $extracted_sender_ip = Select-String -InputObject $data -Pattern $sender_ip_pattern -AllMatches
+    $extracted_recipient = Select-String -InputObject $data -Pattern $recipient_pattern -AllMatches
+    $extracted_subject = $file.Name -replace ".{4}$" # Default filename is subject + extension of .msg
+
+    if (-not $extracted_recipient) {  $extracted_recipient = "Null"} else {$extracted_recipient = $extracted_recipient.Matches.groups[-1].Value}
+    if (-not $extracted_sender) { $extracted_sender = "Null"} else { $extracted_sender = $extracted_sender.Matches.groups[-1].Value}
+    if (-not $extracted_sender_ip) { $extracted_sender_ip = "Null"} else { $extracted_sender_ip = $extracted_sender_ip.Matches.groups[1].Value}
+    if (-not $extracted_date) { $extracted_date = "Null"} else { $extracted_date = $extracted_date.matches.groups[-1].value}
     
 
-     if ($extracted_date.Length -ge 100 -or $extracted_recipient.Length -ge 100 -or $extracted_sender.length -ge 110 -or $extracted_sender_ip.length -ge 100) {
+    if ($extracted_date.Length -ge 100 -or $extracted_recipient.Length -ge 100 -or $extracted_sender.length -ge 110 -or $extracted_sender_ip.length -ge 100) {
          "regex failed"
-     }
+    }
 
-     if ($extracted_date -and $extracted_date -ne "Null") {
-        $extracted_date = Format-DateTime -string $extracted_date } 
+    if ($extracted_date -and $extracted_date -ne "Null") {
+        $extracted_date = Format-DateTime -string $extracted_date 
+    } 
 
     else {
         "date regex failed"
@@ -275,7 +313,7 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
      $message_metadata.sender_ip = $extracted_sender_ip
      $message_metadata.date =$extracted_date
 
-     return @{metadata = $message_metadata; links = $message_urls}
+    return @{metadata = $message_metadata;links=$message_urls}
 
  }
 
