@@ -83,12 +83,17 @@ function main($FilterJunkFolders, $path, $urlfilters) {
     $stream = [System.IO.StreamWriter]::new($path + "\data.csv")
     $stream.writeline("Subject, Recipient, Sender, Sender_IP, Date, URLs")
     
-    $metadata| Sort-Object |ForEach-Object {
-        
-        $stream.WriteLine( $_[0]+ $_[1] -join ", ")}
-    "Wrote " + $path + "\data.csv"
-    $stream.Close()
+    #$metadata| Sort-Object |ForEach-Object {
+    #    
+    #    $stream.WriteLine( $_[0]+ $_[1] -join ", ")}
+    # "Wrote " + $path + "\data.csv"
+    # $stream.Close()
+    
+    $json = foreach ($i in $metadata) {ConvertTo-Json -InputObject $i -depth 5}
 
+    $str = $path + "\output.json"
+    Set-Content -Path $str -Value $json
+    
     if ($errors.Count -gt 0) {
         $stream = [System.IO.StreamWriter]::new($path + "\errors.csv")
         $stream.writeline("Errors")
@@ -99,7 +104,7 @@ function main($FilterJunkFolders, $path, $urlfilters) {
         "Wrote " + $path + "\errors.csv"
         $stream.Close()
     }
-
+    "Wrote $str to disk."
     [String]$zips.Length + " zip files found"   
     [String]$files.Length + " files found"
     [String]$msgFiles.Count + " message files found"
@@ -131,20 +136,22 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
 
     foreach ($i  in $metadata) {
 
-        $message_metadata = $i[0]
-        $message_urls = $i[1]
+        $message_metadata = $i['metadata']
+        $message_urls = $i['links']
 
         foreach ($url in $message_urls) {
             # $url[0] is the URL, $url[1] is the text description
             try{
-                if ($url.Count -eq 2) {
-                    $u = [system.uri]$url[0]  #got some error messages here, guess url didnt always parse right
-                    $url_host = $u.Host } 
-                else {
-                    $u = [system.uri]$url
-                    $url_host = $u.Host
+                #if ($url.Count -eq 2) {
+                #    $u = [system.uri]$url[0]  #got some error messages here, guess url didnt always parse right
+                #    $url_host = $u.Host } 
+                #else {
+                #    $u = [system.uri]$url
+                #    $url_host = $u.Host
+                $u = [system.uri]$url['url']
+                $url_host = $u.Host
                 }
-            }
+            
             catch {
                 "Error casting url to system.uri: " + [string]$url
             }
@@ -214,33 +221,36 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
      $recipient_pattern = "\bTo:\s(?<recipient>[,\`"\w @<>\.\[\]]*)"
 
      
-     $message_urls = @()
-     $message_metadata =@()
+     $message_urls = New-Object System.Collections.ArrayList
+     $message_metadata =@{}
      #TODO urlpattern regex needs fixing...multiple matches and doesnt get the href text.
 
      $html_data = Get-HTMLContent -data $data
      $extracted_urls = Select-String -InputObject $html_data -Pattern $url_pattern2 -AllMatches
-    
-
 
      :outer foreach ($i  in $extracted_urls.Matches) { 
 
-         if ((-not $message_urls.Contains($i.captures[0].groups.value[1]))) { 
-            foreach ($j in $urlfilters) {if ($i.captures.groups.value[1].contains($j)) 
-                {break :outer}
-           
-            $message_urls += ,@($i.groups[1..2].value) }} }
+        #do not add duplicate entries to $message_urls
+        foreach ($j in $message_urls) {
+            if ($i.groups['url'].value -eq ($j['url'])) {
+                break :outer
+            }            
+        }
 
-    remove-variable $i 
-    
+        foreach ($k in $urlfilters) {
+            if ($i.groups['url'].value.contains($k)) {
+                break :outer
+            }
+        }
+            #$message_urls += ,@($i.groups[1..2].value) }} }
+         $message_urls += ,@{url = $i.groups['url'].value; text = $i.groups['text'].value }               
+    }
 
      $extracted_date = Select-String -InputObject $data -Pattern $date_pattern -AllMatches
      $extracted_sender = Select-String -InputObject $data -Pattern $sender_pattern -AllMatches
      $extracted_sender_ip = Select-String -InputObject $data -Pattern $sender_ip_pattern -AllMatches
      $extracted_recipient = Select-String -InputObject $data -Pattern $recipient_pattern -AllMatches
      $extracted_subject = $file.Name -replace ".{4}$" # Default filename is subject + extension of .msg
-
-     #$temp = @()
 
      if (-not $extracted_recipient) {  $extracted_recipient = "Null"} else {$extracted_recipient = $extracted_recipient.Matches.groups[-1].Value}
      if (-not $extracted_sender) { $extracted_sender = "Null"} else { $extracted_sender = $extracted_sender.Matches.groups[-1].Value}
@@ -258,10 +268,14 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
     else {
         "date regex failed"
     }
+     
+     $message_metadata.subject = $extracted_subject
+     $message_metadata.recipient = $extracted_recipient
+     $message_metadata.sender = $extracted_sender
+     $message_metadata.sender_ip = $extracted_sender_ip
+     $message_metadata.date =$extracted_date
 
-     $message_metadata = $extracted_subject, $extracted_recipient, $extracted_sender, $extracted_sender_ip, $extracted_date
-     #$temp = @($message_metadata, $message_urls)
-     return @($message_metadata, $message_urls)
+     return @{metadata = $message_metadata; links = $message_urls}
 
  }
 
