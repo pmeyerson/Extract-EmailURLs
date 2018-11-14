@@ -1,8 +1,11 @@
 param(
     [switch] $FilterJunkFolders,
+    [switch] $writeCSV = $false,
+    [switch] $writeJSON = $false,
+    [switch] $verboseOutput = $false,
     [String] $path,
     [string] $URLFilterList ="urlfilters.conf")
-function main($FilterJunkFolders, $path, $urlfilters) {
+function main($FilterJunkFolders, $path, $urlfilters, $writeCSV, $writeJSON, $verboseOutput) {
     <#
      * walk path and uncompress and .zip files
      * open any .msg files, extract URLS and email metadata
@@ -74,75 +77,105 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
     if ($metadata.Count -gt 0) {
         # Re-format results into a unique list of URLs (with sample metadata)
         Format-UniqueMetadata -metadata $metadata -uniqueURLs $uniqueURLs  
-        
-        #$csv = foreach ($i in $uniqueURLs | sort-object) {
-        #    ConvertFrom-Json | Select-Object -ExpandProperty $_.results
-        #}
+
+        # write unique output 
         $headers = "Host | URL | Text | Subject| Recipient | Sender | Sender_IP | Date | Similar_Count"
-        foreach ($i in $uniqueURLs | Sort-Object) {
-            $csv = $i[0],$i[1][0],$i[1][1] -join " | "
-            $csv += $i[1][2].values -join '|'
-            $csv += $i[1][3] -join '|'
-            $csv += "`r`n"
-        }
-
-        $json = foreach ($i in $uniqueURLs | Sort-Object) {
-            ConvertTo-Json -InputObject $i -Depth 5 | ForEach-Object { [System.Text.RegularExpressions.Regex]::Unescape($_) }
-        }
         
-        $str = $path + '\' + "unique.csv"
-        Set-Content -path $str -Value $headers
-        Add-Content -path $str -Value $csv 
-
-        $str = $path + '\' + "unique.json"
-        Set-Content -Path $str -Value $json 
-        "Wrote " + $path + "\unique.csv with " + $uniqueURLs.Count + " unique URLs"
-        "Wrote " + $path +"\unique.json with " + $uniqueURLs.Count + " unique URLs"
-    }
-
-
-    # write all output as csv
-
-    #$csv  = foreach($i in $metadata | sort-object) {
-    #    ConvertTo-Csv -InputObject $i[-1] -Delimiter ';'
-    #}
-    $json = foreach($i in $metadata | Sort-Object) {
-        ConvertTo-Json -InputObject $i[-1] -Depth 5 | ForEach-Object { [System.Text.RegularExpressions.Regex]::Unescape($_) }
-    }
-    $str = $path + '\' + "data.csv"   
-    $header = "URL| URL_Text| Subject| Sender| Recipient | Sender_IP| Date"
-    $csv = $null
-
-    foreach ($i in $metadata | Sort-Object) {
-
-        foreach ($j in $i['links']) {
-            $csv += $j['url'] + ' |' + $j['text'] + '|'
+        if ($writeCSV) {
+            $csv = $null
+            "Format unique.csv"
+            Measure-Command -Expression{   
+                foreach ($i in $uniqueURLs | Sort-Object) {
+                    $csv += $i[0],$i[1][0],$i[1][1] -join " | "
+                    $csv += '| '
+                    $csv += $i[1][2].values -join ' | '
+                    $csv += ' | ' + $i[1][3] 
+                    $csv += "`r`n"
+                }
+            } 
+               
+            "Write unique.csv"
+            measure-command -Expression {
+                $str = $path + '\' + "unique.csv"
+                Set-Content -path $str -Value $headers
+                Add-Content -path $str -Value $csv 
+            }
         }
-        $csv += $i.metadata.values -join '|'
-        $csv += '|'
 
-        $csv += "`r`n"
+        if ($writeJSON) {
+
+            "Format unique.json"
+            $json = $null
+            measure-command -expression {
+                $json = foreach ($i in $uniqueURLs | Sort-Object) {
+                    ConvertTo-Json -InputObject $i -Depth 5 | ForEach-Object { [System.Text.RegularExpressions.Regex]::Unescape($_) }
+                }  
+            }   
+
+            "Write unique.json"
+            measure-command -Expression {
+                $str = $path + '\' + "unique.json"
+                Set-Content -Path $str -Value $json 
+                "Wrote " + $path + "\unique.csv with " + $uniqueURLs.Count + " unique URLs"
+                "Wrote " + $path +"\unique.json with " + $uniqueURLs.Count + " unique URLs"
+            }
+        }
     }
 
-    set-content -path $str -Value $header
-    #add-content -path $str -Value $csv
-    Add-Content -Path $str -Value $csv
-    #$csv =  $metadata | Sort-Object |   ForEach-Object{ [PSCustomObject]$_ | ForEach-Object{ [PSCustomObject]$_  }} 
-    "Wrote $str"
 
-    $str = $path + '\' + "data.json"
-    Set-Content -Path $str -value $json
-    "Wrote $str "
+    # write detailed output
 
-    
-    $json = foreach ($i in $metadata | Sort-Object) {
-        ConvertTo-Json -InputObject $i -depth 5 | ForEach-Object { [System.Text.RegularExpressions.Regex]::Unescape($_) }
+    if ($writeJSON -and $verboseOutput) {
+        "Format data.json"
+        measure-command {
+            $json = foreach($i in $metadata | Sort-Object) {
+                ConvertTo-Json -InputObject $i -Depth 5 | ForEach-Object { [System.Text.RegularExpressions.Regex]::Unescape($_) }
+            }
+        }
+
+        "Write data.json"
+        measure-command {
+            $str = $path + '\' + "data.json"
+            Set-Content -Path $str -value $json
+            "Wrote $str "
+        }
     }
 
-    $str = $path + '\' +  "output.json"
-    Set-Content -Path $str -Value $json
-    "Wrote $str "
+    if ($writeCSV -and $verboseOutput) {
+    "Format data.csv began at: " + [string](get-date)
+        measure-command {
+            $str = $path + '\' + "data.csv"   
+            $header = "URL| URL_Text| Subject| Sender| Recipient | Sender_IP| Date"
+            $csv = $null
+
+            foreach ($i in $metadata | Sort-Object) {
+
+                foreach ($j in $i['links']) {
+                    $csv += $j['url'] + ' | ' + $j['text'] + ' | '
+                }
+                $csv += $i.metadata.values -join ' | '       
+
+                $csv += "`r`n"
+            }
+        }
+
+
+        "Write data.csv.  Formatting ended at: " + [string](get-date)
+        measure-command {
+            set-content -path $str -Value $header
+            Add-Content -Path $str -Value $csv
+            
+            "Wrote $str"
+        }
+    }
     
+    #"Write test.csv"
+    #$csv = $null
+    #$str = $path + '\' + "test.csv"
+    #measure-command { 
+    #    $metadata | sort-object  | foreach-object {[pscustomobject]$_ | Export-Csv -path $str  
+    #    }
+    #}
 
     if ($errors.Count -gt 0) {
         $stream = [System.IO.StreamWriter]::new($path + "\errors.csv")
@@ -221,7 +254,7 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
             # TODO check logic... unique hosts/url missing from list
             if (-not $url_hosts_present) {
                 
-                $uniqueURLs.add(@($url_host, @($query_only, $url[1], $message_metadata, 1))) > $null
+                $uniqueURLs.add(@($url_host, @($query_only, $url['text'], $message_metadata, 1))) > $null
 
             } elseif ($url_hosts_present.contains($url_host)) {
 
@@ -230,7 +263,7 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
 
                 if (-not $urls_present.contains($query_only)) {
                     #if the url_host is found but not this specific url, add
-                    $uniqueURLs[$uniqueURLs.indexOf($url_host)] += (@($query_only, $url[1], $message_metadata, 1)) > $null
+                    $uniqueURLs[$uniqueURLs.indexOf($url_host)] += (@($query_only, $url['text'], $message_metadata, 1)) > $null
                 
                 } else {
                     # increment count of messages with URL found
@@ -239,7 +272,7 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
 
             } else {
 
-                $uniqueURLs.add(@($url_host, @($query_only, $url[1], $message_metadata, 1))) > $null
+                $uniqueURLs.add(@($url_host, @($query_only, $url['text'], $message_metadata, 1))) > $null
 
             }
         }
@@ -369,4 +402,4 @@ if ($URLFilterList) {
     $URLFilters = get-content -Path $URLFilterList
 }
 
-main -path $path -FilterJunkFolders $FilterJunkFolders -urlfilters $URLFilters
+main -path $path -FilterJunkFolders $FilterJunkFolders -urlfilters $URLFilters -writeCSV $writeCSV -writeJSON $writeJSON -verboseOutput $verboseOutput
