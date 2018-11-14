@@ -79,7 +79,7 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
             ConvertTo-Csv -InputObject $i -Delimiter ';'
         }
         $json = foreach ($i in $uniqueURLs | Sort-Object) {
-            ConvertTo-Json -InputObject $i -Depth 5
+            ConvertTo-Json -InputObject $i -Depth 5 | ForEach-Object { [System.Text.RegularExpressions.Regex]::Unescape($_) }
         }
         
         $str = $path + '\' + "unique.csv"
@@ -98,7 +98,7 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
     #    ConvertTo-Csv -InputObject $i[-1] -Delimiter ';'
     #}
     $json = foreach($i in $metadata | Sort-Object) {
-        ConvertTo-Json -InputObject $i[-1] -Depth 5
+        ConvertTo-Json -InputObject $i[-1] -Depth 5 | ForEach-Object { [System.Text.RegularExpressions.Regex]::Unescape($_) }
     }
     $str = $path + '\' + "data.csv"   
     $header = "Subject, Recipient, Sender, Sender_IP, Date, URLs"
@@ -328,6 +328,8 @@ function Get-HTMLContent($data) {
      $message_metadata.sender_ip = $extracted_sender_ip
      $message_metadata.date =$extracted_date
 
+
+     #TODO Needs testing
     foreach ($i in $message_metadata.Values) {
         if ($i -contains "\r" -or $i -contains "\n") {
             $i.replace("[`r`n\r\n]*","") | Out-Null
