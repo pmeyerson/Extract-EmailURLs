@@ -75,15 +75,24 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
         # Re-format results into a unique list of URLs (with sample metadata)
         Format-UniqueMetadata -metadata $metadata -uniqueURLs $uniqueURLs  
         
-        $csv = foreach ($i in $uniqueURLs | sort-object) {
-            ConvertTo-Csv -InputObject $i -Delimiter ';'
+        #$csv = foreach ($i in $uniqueURLs | sort-object) {
+        #    ConvertFrom-Json | Select-Object -ExpandProperty $_.results
+        #}
+        $headers = "Host | URL | Text | Subject| Recipient | Sender | Sender_IP | Date | Similar_Count"
+        foreach ($i in $uniqueURLs | Sort-Object) {
+            $csv = $i[0],$i[1][0],$i[1][1] -join " | "
+            $csv += $i[1][2].values -join '|'
+            $csv += $i[1][3] -join '|'
+            $csv += "`r`n"
         }
+
         $json = foreach ($i in $uniqueURLs | Sort-Object) {
             ConvertTo-Json -InputObject $i -Depth 5 | ForEach-Object { [System.Text.RegularExpressions.Regex]::Unescape($_) }
         }
         
         $str = $path + '\' + "unique.csv"
-        Export-Csv -InputObject $uniqueURLs -NoTypeInformation -Path $str -Force
+        Set-Content -path $str -Value $headers
+        Add-Content -path $str -Value $csv 
 
         $str = $path + '\' + "unique.json"
         Set-Content -Path $str -Value $json 
@@ -101,18 +110,23 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
         ConvertTo-Json -InputObject $i[-1] -Depth 5 | ForEach-Object { [System.Text.RegularExpressions.Regex]::Unescape($_) }
     }
     $str = $path + '\' + "data.csv"   
-    $header = "Subject, Recipient, Sender, Sender_IP, Date, URLs"
+    $header = "URL| URL_Text| Subject| Sender| Recipient | Sender_IP| Date"
     $csv = $null
-    foreach ($i in $metadata) {
-        $csv += $i['metadata'].values -join "|"
+
+    foreach ($i in $metadata | Sort-Object) {
+
         foreach ($j in $i['links']) {
-            $csv += ('', $j['url'],$j['text']) -join "|"
+            $csv += $j['url'] + ' |' + $j['text'] + '|'
         }
+        $csv += $i.metadata.values -join '|'
+        $csv += '|'
+
         $csv += "`r`n"
     }
+
     set-content -path $str -Value $header
     #add-content -path $str -Value $csv
-    Export-Csv -Path $str -InputObject $csv 
+    Add-Content -Path $str -Value $csv
     #$csv =  $metadata | Sort-Object |   ForEach-Object{ [PSCustomObject]$_ | ForEach-Object{ [PSCustomObject]$_  }} 
     "Wrote $str"
 
@@ -175,6 +189,7 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
         $message_metadata = $i['metadata']
         $message_urls = $i['links']
 
+        #TODO FIX ; got error message error casting to system.uri for [hashtable]
         foreach ($url in $message_urls) {
             # $url[0] is the URL, $url[1] is the text description
             try{
@@ -202,6 +217,8 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
             #make array of all url hosts (all $i[0]s)
             $url_hosts_present = foreach($i in $uniqueURLs) {$i[0]}
 
+
+            # TODO check logic... unique hosts/url missing from list
             if (-not $url_hosts_present) {
                 
                 $uniqueURLs.add(@($url_host, @($query_only, $url[1], $message_metadata, 1))) > $null
