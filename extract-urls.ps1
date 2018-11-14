@@ -63,28 +63,18 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
 
         if ($data -match $url_pattern) {
             #$metadata.add(@(Get-Metadata -data $data -url_pattern $url_pattern -urlfilters $urlfilters)) > $null #append results but suppress output 
-            $temp2 = @(Get-Metadata -data $data -url_pattern $url_pattern -urlfilters $urlfilters)
+            $temp2 = Get-Metadata -data $data -url_pattern $url_pattern -urlfilters $urlfilters
             $metadata.add($temp2) > $null #append results but suppress output 
         }
         
     }
 
+    ## reformat data as necessary and write output files
+
     if ($metadata.Count -gt 0) {
+        # Re-format results into a unique list of URLs (with sample metadata)
         Format-UniqueMetadata -metadata $metadata -uniqueURLs $uniqueURLs  
         
-        #$stream = [System.IO.StreamWriter]::new($path + "\unique.csv")
-        #$stream.writeline("URL, Text, Domain, Subject, Recipient, Sender, Sender_IP, Date, Messages_Received")
-        
-        <#
-        foreach ($i in $uniqueURLs | Sort-Object) {
-            $len = $i[1][2].Count -1 #length of metadata ie $i[1]
-            $meta = $i[1][2][0..$len] -join ";"
-            $str = $i[1][0], $i[1][1], $i[0] -join " , "
-            $str = $str, $meta, $i[1][3] -join ";"
-
-            $stream.WriteLine($str)
-        }
-        #>
         $csv = foreach ($i in $uniqueURLs | sort-object) {
             ConvertTo-Csv -InputObject $i -Delimiter ';'
         }
@@ -99,23 +89,33 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
         Set-Content -Path $str -Value $json 
         "Wrote " + $path + "\unique.csv with " + $uniqueURLs.Count + " unique URLs"
         "Wrote " + $path +"\unique.json with " + $uniqueURLs.Count + " unique URLs"
-        #$stream.Close()
     }
 
 
     # write all output as csv
 
-    $csv  = foreach($i in $metadata | sort-object) {
-        ConvertTo-Csv -InputObject $i[-1] -Delimiter ';'
-    }
+    #$csv  = foreach($i in $metadata | sort-object) {
+    #    ConvertTo-Csv -InputObject $i[-1] -Delimiter ';'
+    #}
     $json = foreach($i in $metadata | Sort-Object) {
         ConvertTo-Json -InputObject $i[-1] -Depth 5
     }
     $str = $path + '\' + "data.csv"   
     $header = "Subject, Recipient, Sender, Sender_IP, Date, URLs"
+    $csv = $null
+    foreach ($i in $metadata) {
+        $csv += $i['metadata'].values -join "|"
+        foreach ($j in $i['links']) {
+            $csv += ('', $j['url'],$j['text']) -join "|"
+        }
+        $csv += "`r`n"
+    }
     set-content -path $str -Value $header
-    add-content -path $str -Value $csv
+    #add-content -path $str -Value $csv
+    Export-Csv -Path $str -InputObject $csv 
+    #$csv =  $metadata | Sort-Object |   ForEach-Object{ [PSCustomObject]$_ | ForEach-Object{ [PSCustomObject]$_  }} 
     "Wrote $str"
+
     $str = $path + '\' + "data.json"
     Set-Content -Path $str -value $json
     "Wrote $str "
@@ -275,8 +275,22 @@ function Get-HTMLContent($data) {
                 break :outer
             }
         }
-            #$message_urls += ,@($i.groups[1..2].value) }} }
-         $message_urls += ,@{url = $i.groups['url'].value; text = $i.groups['text'].value }                
+        
+        #if ($i.groups.values -contains "\r" -or $i.groups.values -contains "\n") {
+        #    $i.groups['url'].value.replace("[\r\n]+","") |out-null
+        #    $i.groups['text'].value.replace("[\r\n]+", "") | out-null
+        # } 
+
+        $message_urls += ,@{url = $i.groups['url'].value; text = $i.groups['text'].value }                
+    }
+
+    foreach ($i in $message_urls) {
+        if ($i['text'].contains([char]13) -or $i['text'].contains([char]10)) {
+            $i['text'] = $i['text'] -replace [char]13,'' -replace [char]10,'' 
+        }
+        if ($i['url'].contains([char]13) -or $i['url'].contains([char]10)) {
+            $i['url'] = $i['url'] -replace [char]13,'' -replace [char]10,'' 
+        }        
     }
 
     $data.replace("\u003e", ">") |out-null #required otherwise function return will have this as well
@@ -295,23 +309,35 @@ function Get-HTMLContent($data) {
     if (-not $extracted_date) { $extracted_date = "Null"} else { $extracted_date = $extracted_date.matches.groups[-1].value}
     
 
+
     if ($extracted_date.Length -ge 100 -or $extracted_recipient.Length -ge 100 -or $extracted_sender.length -ge 110 -or $extracted_sender_ip.length -ge 100) {
          "regex failed"
     }
 
     if ($extracted_date -and $extracted_date -ne "Null") {
         $extracted_date = Format-DateTime -string $extracted_date 
-    } 
-
-    else {
+    }  else {
         "date regex failed"
     }
+
+
      
      $message_metadata.subject = $extracted_subject
      $message_metadata.recipient = $extracted_recipient
      $message_metadata.sender = $extracted_sender
      $message_metadata.sender_ip = $extracted_sender_ip
      $message_metadata.date =$extracted_date
+
+    foreach ($i in $message_metadata.Values) {
+        if ($i -contains "\r" -or $i -contains "\n") {
+            $i.replace("[`r`n\r\n]*","") | Out-Null
+        } if ($i -contains "\u003c") {
+            $i.replace("\u003c", "<") | Out-Null
+        } if ($i -contains "\u003e") {
+            $i.replace("\u003e", ">") | Out-Null
+        }
+
+    }
 
     return @{metadata = $message_metadata;links=$message_urls}
 
