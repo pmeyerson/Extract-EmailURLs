@@ -121,10 +121,13 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
     "Wrote $str "
 
     
-    $json = foreach ($i in $metadata) {ConvertTo-Json -InputObject $i -depth 5}
+    $json = foreach ($i in $metadata | Sort-Object) {
+        ConvertTo-Json -InputObject $i -depth 5 | ForEach-Object { [System.Text.RegularExpressions.Regex]::Unescape($_) }
+    }
 
     $str = $path + '\' +  "output.json"
     Set-Content -Path $str -Value $json
+    "Wrote $str "
     
 
     if ($errors.Count -gt 0) {
@@ -137,7 +140,7 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
         "Wrote " + $path + "\errors.csv"
         $stream.Close()
     }
-    "Wrote $str to disk."
+    #"Wrote $str to disk."
     [String]$zips.Length + " zip files found"   
     [String]$files.Length + " files found"
     [String]$msgFiles.Count + " message files found"
