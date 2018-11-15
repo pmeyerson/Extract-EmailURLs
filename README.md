@@ -1,12 +1,12 @@
 # extract-urls
-.Synopsis
+Synopsis:
     Search through exported message files under a specified path, recursively.  Ouput text file reports with unique
     URLs and message metadata.
 
     Scanning 10,000 may take 10-15 minutes.  A progress bar is displayed.  Selecting the -verboseOutput and
     -writeCSV flags may add another 10 minutes or so.
 
- .Description
+ Description:
     This script will extract any URLs along with their accompanying text description,
     in addition to the sender, sender IP, recipient, subject (message export filename defaults to subject), 
     and timestamp of message.
@@ -29,18 +29,18 @@
     -verboseOutput      flag - include to also output a report with the metadata and URLs found in each email scanned.
 
 
- .Example
+ Example:
     .\extract-urls.pl1 -path c:\out\export -writeJSON 
 
     Search through all message files under c:\out\export, and write report of unique URLs in .json format.
 
- .Example
+ Example:
     PS C:\users\jim>  ~\documents\repos\extract-urls\extract-urls.ps1 -path c:\export\search1 -writeJSON -URLFilterList ~\documents\repos\extract-urls\urlfilters.conf
 
     Search through all message files under c:\export\search1, write report in .json format, excluding anything that 
     matches an entry in the text file at urlfilters.conf
 
- .Example
+ Example:
     .\extract-urls.pls1 -path c:\out\export -writeJSON -verboseOutput -URLFilterList c:\users\jim\documents\filters.txt
 
     Search through all message files in c:\out\export, write a report of uniuqe URLs and metadata, as well as a detailed report listing all messages scanned with URLs.  The specified URL Filter is applied to both reports.
