@@ -1,10 +1,58 @@
+ <#
+ .Synopsis
+    Search through exported message files under a specified path, recursively.  Ouput text file reports with unique
+    URLs and message metadata.
+
+    Scanning 10,000 may take 10-15 minutes.  A progress bar is displayed.  Selecting the -verboseOutput and
+    -writeCSV flags may add another 10 minutes or so.
+
+ .Description
+    This script will extract any URLs along with their accompanying text description,
+    in addition to the sender, sender IP, recipient, subject (message export filename defaults to subject), 
+    and timestamp of message.
+
+    If you use office 365, messages can be exported using the content search in the security and compliance center.
+    Make sure to use the `export individual messages` option - this script cannot open .PST files.
+
+    You can also specify a list of URLs to filter out; a filter list with http://www.facebook.com will filter out 
+    http://www.facebook.com/user/jim, but not https://www.facebook.com. 
+
+    You must specify to output in either CSV or JSON format.  Note that exporting the detailed report in CSV format 
+    is very time consuming.  JSON is much faster.
+
+    Parameters:
+    -path:  path to traverse looking for messages.
+    -FilterJunkFolders:     flag - include to ignore messages found in a users Junk E-Mail folder.
+    -URLFilterList:        full path to urlfilters.conf file - one entry per line, no punctuation.
+    -writeCSV:          output in CSV format. '|' used as a delimiter.
+    -writeJSON:         output in JSON format.  Faster, epsecially for verbose output.
+    -verboseOutput      flag - include to also output a report with the metadata and URLs found in each email scanned.
+
+
+ .Example
+    .\extract-urls.pl1 -path c:\out\export -writeJSON 
+
+    Search through all message files under c:\out\export, and write report of unique URLs in .json format.
+
+ .Example
+    PS C:\users\jim>  ~\documents\repos\extract-urls\extract-urls.ps1 -path c:\export\search1 -writeJSON -URLFilterList ~\documents\repos\extract-urls\urlfilters.conf
+
+    Search through all message files under c:\export\search1, write report in .json format, excluding anything that 
+    matches an entry in the text file at urlfilters.conf
+
+ .Example
+    .\extract-urls.pls1 -path c:\out\export -writeJSON -verboseOutput -URLFilterList c:\users\jim\documents\filters.txt
+
+    Search through all message files in c:\out\export, write a report of uniuqe URLs and metadata, as well as a detailed report listing all messages scanned with URLs.  The specified URL Filter is applied to both reports.
+  #>
 param(
     [switch] $FilterJunkFolders,
-    [switch] $writeCSV = $false,
-    [switch] $writeJSON = $false,
-    [switch] $verboseOutput = $false,
-    [String] $path,
+    [switch] $writeCSV,
+    [switch] $writeJSON,
+    [switch] $verboseOutput,
+    [Parameter(Mandatory=$true)][String] $path,
     [string] $URLFilterList ="urlfilters.conf")
+    
 function main($FilterJunkFolders, $path, $urlfilters, $writeCSV, $writeJSON, $verboseOutput) {
     <#
      * walk path and uncompress and .zip files
@@ -34,11 +82,11 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
     #"Scanning " + $path
     $files = Get-ChildItem -path $path -file -recurse
 
-    $zips = @()
-    foreach ($file in $files)    {
-        if ($file.Extension -eq ".zip") {
-            $zips += $file }
-    }
+    #$zips = @()
+    #foreach ($file in $files)    {
+    #    if ($file.Extension -eq ".zip") {
+    #        $zips += $file }
+    #}
 
     foreach ($file in $files) {
         if ($file.Extension -eq ".msg") {
@@ -47,7 +95,7 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
     }
 
      
-    #TODO uncompress zip files
+    # TODO uncompress zip files
 
     foreach ($file in $msgfiles) {
         
@@ -65,7 +113,6 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
         }
 
         if ($data -match $url_pattern) {
-            #$metadata.add(@(Get-Metadata -data $data -url_pattern $url_pattern -urlfilters $urlfilters)) > $null #append results but suppress output 
             $temp2 = Get-Metadata -data $data -url_pattern $url_pattern -urlfilters $urlfilters
             $metadata.add($temp2) > $null #append results but suppress output 
         }
@@ -79,7 +126,7 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
         Format-UniqueMetadata -metadata $metadata -uniqueURLs $uniqueURLs  
 
         # write unique output 
-        $headers = "Host | URL | Text | Subject| Recipient | Sender | Sender_IP | Date | Similar_Count"
+        $headers = "Host | URL | Text | Subject| Sender | Date | Recipient | Sender_IP  | Similar_Count"
         
         if ($writeCSV) {
             $csv = $null
@@ -99,6 +146,7 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
                 $str = $path + '\' + "unique.csv"
                 Set-Content -path $str -Value $headers
                 Add-Content -path $str -Value $csv 
+                "Wrote " + $path + "\unique.csv with " + $uniqueURLs.Count + " unique URLs"
             }
         }
 
@@ -116,12 +164,11 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
             measure-command -Expression {
                 $str = $path + '\' + "unique.json"
                 Set-Content -Path $str -Value $json 
-                "Wrote " + $path + "\unique.csv with " + $uniqueURLs.Count + " unique URLs"
+                
                 "Wrote " + $path +"\unique.json with " + $uniqueURLs.Count + " unique URLs"
             }
         }
     }
-
 
     # write detailed output
 
@@ -145,7 +192,7 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
     "Format data.csv began at: " + [string](get-date)
         measure-command {
             $str = $path + '\' + "data.csv"   
-            $header = "URL| URL_Text| Subject| Sender| Recipient | Sender_IP| Date"
+            $header = "URL| URL_Text| Subject| Sender| Date | Recipient | Sender_IP"
             $csv = $null
 
             foreach ($i in $metadata | Sort-Object) {
@@ -169,14 +216,6 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
         }
     }
     
-    #"Write test.csv"
-    #$csv = $null
-    #$str = $path + '\' + "test.csv"
-    #measure-command { 
-    #    $metadata | sort-object  | foreach-object {[pscustomobject]$_ | Export-Csv -path $str  
-    #    }
-    #}
-
     if ($errors.Count -gt 0) {
         $stream = [System.IO.StreamWriter]::new($path + "\errors.csv")
         $stream.writeline("Errors")
@@ -187,8 +226,7 @@ href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
         "Wrote " + $path + "\errors.csv"
         $stream.Close()
     }
-    #"Wrote $str to disk."
-    [String]$zips.Length + " zip files found"   
+ 
     [String]$files.Length + " files found"
     [String]$msgFiles.Count + " message files found"
     [String]$metadata.Count + " messages parsed successfully."
@@ -226,12 +264,6 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
         foreach ($url in $message_urls) {
             # $url[0] is the URL, $url[1] is the text description
             try{
-                #if ($url.Count -eq 2) {
-                #    $u = [system.uri]$url[0]  #got some error messages here, guess url didnt always parse right
-                #    $url_host = $u.Host } 
-                #else {
-                #    $u = [system.uri]$url
-                #    $url_host = $u.Host
                 $u = [system.uri]$url['url']
                 $url_host = $u.Host
                 }
@@ -240,9 +272,6 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
                 "Error casting url to system.uri: " + [string]$url
             }
 
-            #if ($u.Query) { $query_only = $u.AbsoluteUri.Replace($u.Query, "") 
-            #} else {        $query_only = $u.AbsoluteUri
-            #}
             $query_only = $u.AbsoluteUri
             #Strip trailing "/" if present
             if ($query_only[-1] -eq "/") { $query_only = $query_only -replace ".$"}
@@ -250,8 +279,6 @@ function Format-UniqueMetadata($metadata, $uniqueURLs) {
             #make array of all url hosts (all $i[0]s)
             $url_hosts_present = foreach($i in $uniqueURLs) {$i[0]}
 
-
-            # TODO check logic... unique hosts/url missing from list
             if (-not $url_hosts_present) {
                 
                 $uniqueURLs.add(@($url_host, @($query_only, $url['text'], $message_metadata, 1))) > $null
@@ -297,19 +324,14 @@ function Get-HTMLContent($data) {
      :return: {array}  array of (metadata, urls)
      #>
 
-     #$url_pattern = "\b([a-zA-Z]{3,})://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?"
-     #$url_pattern2 = @'
-#href=\"(?<url>[a-zA-Z]{3,5}:\/\/[^\"]*)\">(?<text>[^(?=<\/a]*)
-#'@
      $date_pattern = "\bDate:\s(?<date>[\w,: ]*)"
-     $sender_pattern = "\bFrom:\s(?<sender>[,\`"\w @<>\.\]\[]*)"
+     $sender_pattern = "\bFrom:\s(?<sender>[,\`"\w @<>\.\]\[\-_]*)"
      $sender_ip_pattern = "\bsender\sip\sis\s([^\)]*)"
-     $recipient_pattern = "\bTo:\s(?<recipient>[,\`"\w @<>\.\[\]]*)"
+     $recipient_pattern = "\bTo:\s(?<recipient>[,\`"\w @<>\.\[\]\-_]*)"
 
      
      $message_urls = New-Object System.Collections.ArrayList
      $message_metadata =@{}
-     #TODO urlpattern regex needs fixing...multiple matches and doesnt get the href text.
 
      $html_data = Get-HTMLContent -data $data
      $extracted_urls = Select-String -InputObject $html_data -Pattern $url_pattern -AllMatches 
@@ -319,24 +341,20 @@ function Get-HTMLContent($data) {
         #do not add duplicate entries to $message_urls
         foreach ($j in $message_urls) {
             if ($i.groups['url'].value -eq ($j['url'])) {
-                break :outer
+                break outer
             }            
         }
 
         foreach ($k in $urlfilters) {
             if ($i.groups['url'].value.contains($k)) {
-                break :outer
+                break outer
             }
         }
-        
-        #if ($i.groups.values -contains "\r" -or $i.groups.values -contains "\n") {
-        #    $i.groups['url'].value.replace("[\r\n]+","") |out-null
-        #    $i.groups['text'].value.replace("[\r\n]+", "") | out-null
-        # } 
 
         $message_urls += ,@{url = $i.groups['url'].value; text = $i.groups['text'].value }                
     }
 
+    # Remove ascii 10 or ascii 13 from text and url
     foreach ($i in $message_urls) {
         if ($i['text'].contains([char]13) -or $i['text'].contains([char]10)) {
             $i['text'] = $i['text'] -replace [char]13,'' -replace [char]10,'' 
@@ -346,8 +364,10 @@ function Get-HTMLContent($data) {
         }        
     }
 
-    $data.replace("\u003e", ">") |out-null #required otherwise function return will have this as well
-    $data.replace("\u003c", "<")|out-null  # see https://stackoverflow.com/questions/8671602/problems-returning-hashtable
+    # | out-null required otherwise result will append to return value for entire function call
+    # see https://stackoverflow.com/questions/8671602/problems-returning-hashtable
+    $data.replace("\u003e", ">") |out-null 
+    $data.replace("\u003c", "<")|out-null  
 
 
     $extracted_date = Select-String -InputObject $data -Pattern $date_pattern -AllMatches
@@ -359,8 +379,7 @@ function Get-HTMLContent($data) {
     if (-not $extracted_recipient) {  $extracted_recipient = "Null"} else {$extracted_recipient = $extracted_recipient.Matches.groups[-1].Value}
     if (-not $extracted_sender) { $extracted_sender = "Null"} else { $extracted_sender = $extracted_sender.Matches.groups[-1].Value}
     if (-not $extracted_sender_ip) { $extracted_sender_ip = "Null"} else { $extracted_sender_ip = $extracted_sender_ip.Matches.groups[1].Value}
-    if (-not $extracted_date) { $extracted_date = "Null"} else { $extracted_date = $extracted_date.matches.groups[-1].value}
-    
+    if (-not $extracted_date) { $extracted_date = "Null"} else { $extracted_date = $extracted_date.matches.groups[-1].value}  
 
 
     if ($extracted_date.Length -ge 100 -or $extracted_recipient.Length -ge 100 -or $extracted_sender.length -ge 110 -or $extracted_sender_ip.length -ge 100) {
@@ -372,17 +391,13 @@ function Get-HTMLContent($data) {
     }  else {
         "date regex failed"
     }
-
-
      
-     $message_metadata.subject = $extracted_subject
-     $message_metadata.recipient = $extracted_recipient
+     $message_metadata.subject = $extracted_subject    
      $message_metadata.sender = $extracted_sender
-     $message_metadata.sender_ip = $extracted_sender_ip
      $message_metadata.date =$extracted_date
+     $message_metadata.recipient = $extracted_recipient
+     $message_metadata.sender_ip = $extracted_sender_ip
 
-
-     #TODO Needs testing
     foreach ($i in $message_metadata.Values) {
         if ($i -contains "\r" -or $i -contains "\n") {
             $i.replace("[`r`n\r\n]*","") | Out-Null
@@ -398,8 +413,18 @@ function Get-HTMLContent($data) {
 
  }
 
+
+
 if ($URLFilterList) {
     $URLFilters = get-content -Path $URLFilterList
+}
+
+if (-not $writeCSV -and -not $writeJSON) {
+    "No output format specified.  Please specify at least one of -writeCSV or -writeJSON"    
+    [System.Environment]::exit(1)
+} elseif (-not $path) {
+    "No path specified.  Please use -path followed by path to .msg files.  Path will be recursively searched."
+    [System.Environment]::exit(1)
 }
 
 main -path $path -FilterJunkFolders $FilterJunkFolders -urlfilters $URLFilters -writeCSV $writeCSV -writeJSON $writeJSON -verboseOutput $verboseOutput
