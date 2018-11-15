@@ -1,2 +1,5 @@
 urlfilters.conf
 *.git
+workspace
+.vscode
+.idea
