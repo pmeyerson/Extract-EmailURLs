@@ -1,20 +1,17 @@
 # extract-urls
 Synopsis:
     Search through exported message files under a specified path, recursively.  Ouput text file reports with unique
-    URLs and message metadata.
-
-    Scanning 10,000 may take 10-15 minutes.  A progress bar is displayed.  Selecting the -verboseOutput and
+    URLs and message metadata. Scanning 10,000 may take 10-15 minutes.  A progress bar is displayed.  Selecting the -verboseOutput and
     -writeCSV flags may add another 10 minutes or so.
 
  Description:
     This script will extract any URLs along with their accompanying text description,
     in addition to the sender, sender IP, recipient, subject (message export filename defaults to subject), 
-    and timestamp of message.
-
-    If you use office 365, messages can be exported using the content search in the security and compliance center.
+    and timestamp of message. If you use office 365, messages can be exported using the content search in the security 
+    and compliance center.
     Make sure to use the `export individual messages` option - this script cannot open .PST files.
 
-    You can also specify a list of URLs to filter out; a filter list with http://www.facebook.com will filter out 
+    You can also specify a list of URLs to filter out. A filter list with http://www.facebook.com will filter out 
     http://www.facebook.com/user/jim, but not https://www.facebook.com. 
 
     You must specify to output in either CSV or JSON format.  Note that exporting the detailed report in CSV format 
